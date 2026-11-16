@@ -4,6 +4,10 @@ project(CPUSimulator LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Link the C++ runtime statically so the released .exe runs without the
+# Visual C++ redistributable installed.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 # ---- Simulator core: no graphics dependencies, unit-testable ----
 add_library(simcore STATIC
     src/isa.cpp
