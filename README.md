@@ -27,6 +27,14 @@ build\Release\cpu_simulator.exe
 The first configure downloads Dear ImGui and GLFW. Run the core tests with
 `build\Release\core_tests.exe`.
 
+## Settings
+
+**File > Settings** (Ctrl+,) changes the text and interface size, the theme (midnight
+blue, black or light), animations, how register values are shown, which panels are
+visible and the run speed. Panels can also be toggled from the **View** menu.
+Preferences and the challenge high score are saved to
+`%APPDATA%\MIPS Pipeline Simulator\settings.ini`. **Help > About** shows the version.
+
 ## Controls
 
 | Key | Action |
@@ -37,6 +45,8 @@ The first configure downloads Dear ImGui and GLFW. Run the core tests with
 | Ctrl+Enter (in editor) | Assemble and load |
 | Enter | Continue (lesson or challenge) |
 | 1-4 | Answer a challenge question |
+| Ctrl + / Ctrl - / Ctrl 0 | Larger / smaller / default text size |
+| Ctrl+, | Settings |
 
 ## What it models
 

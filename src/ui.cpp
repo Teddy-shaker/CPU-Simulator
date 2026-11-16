@@ -5,6 +5,9 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <unordered_map>
 #include <vector>
 
@@ -18,26 +21,59 @@ namespace {
 float g_scale = 1.0f;
 inline float px(float v) { return v * g_scale; }
 
-const ImU32 COL_STAGE[5] = {
-    IM_COL32(79, 163, 255, 255),   // IF  blue
-    IM_COL32(61, 214, 181, 255),   // ID  teal
-    IM_COL32(255, 180, 84, 255),   // EX  amber
-    IM_COL32(197, 139, 255, 255),  // MEM purple
-    IM_COL32(255, 111, 145, 255)   // WB  pink
-};
+bool g_anim = true;
+
+// Colors. These are set by set_palette() so the theme can change them.
+ImU32 COL_STAGE[5];  // IF blue, ID teal, EX amber, MEM purple, WB pink
 const char* const STAGE_NAME[5] = {"IF", "ID", "EX", "MEM", "WB"};
 const char* const STAGE_LONG[5] = {"Fetch", "Decode", "Execute", "Memory", "Write back"};
 const char* const STAGE_UNIT[5] = {"Instruction memory", "Registers + control", "ALU", "Data cache", "Register write"};
 
-const ImU32 COL_TEXT = IM_COL32(226, 232, 240, 255);
-const ImU32 COL_DIM = IM_COL32(124, 136, 154, 255);
-const ImU32 COL_FAINT = IM_COL32(58, 68, 84, 255);
-const ImU32 COL_BOX = IM_COL32(27, 33, 44, 255);
-const ImU32 COL_RED = IM_COL32(255, 96, 96, 255);
-const ImU32 COL_GREEN = IM_COL32(98, 216, 130, 255);
-const ImU32 COL_YELLOW = IM_COL32(255, 221, 87, 255);
-const ImU32 COL_CYAN = IM_COL32(110, 220, 255, 255);
-const ImU32 COL_ORANGE = IM_COL32(255, 150, 70, 255);
+ImU32 COL_TEXT, COL_DIM, COL_FAINT, COL_BOX, COL_RED, COL_GREEN, COL_YELLOW, COL_CYAN, COL_ORANGE;
+ImU32 COL_BAR, COL_BAR_LIT, COL_BAR_EDGE, COL_HILITE;
+
+void set_palette(int theme) {
+    const bool light = theme == 2;
+    if (!light) {
+        COL_STAGE[0] = IM_COL32(79, 163, 255, 255);
+        COL_STAGE[1] = IM_COL32(61, 214, 181, 255);
+        COL_STAGE[2] = IM_COL32(255, 180, 84, 255);
+        COL_STAGE[3] = IM_COL32(197, 139, 255, 255);
+        COL_STAGE[4] = IM_COL32(255, 111, 145, 255);
+        COL_TEXT = IM_COL32(226, 232, 240, 255);
+        COL_DIM = IM_COL32(124, 136, 154, 255);
+        COL_FAINT = IM_COL32(58, 68, 84, 255);
+        COL_BOX = theme == 1 ? IM_COL32(14, 16, 20, 255) : IM_COL32(27, 33, 44, 255);
+        COL_RED = IM_COL32(255, 96, 96, 255);
+        COL_GREEN = IM_COL32(98, 216, 130, 255);
+        COL_YELLOW = IM_COL32(255, 221, 87, 255);
+        COL_CYAN = IM_COL32(110, 220, 255, 255);
+        COL_ORANGE = IM_COL32(255, 150, 70, 255);
+        COL_BAR = IM_COL32(52, 62, 80, 255);
+        COL_BAR_LIT = IM_COL32(96, 112, 140, 255);
+        COL_BAR_EDGE = IM_COL32(92, 106, 130, 255);
+        COL_HILITE = IM_COL32(255, 255, 255, 12);
+    } else {
+        COL_STAGE[0] = IM_COL32(52, 134, 232, 255);
+        COL_STAGE[1] = IM_COL32(22, 170, 140, 255);
+        COL_STAGE[2] = IM_COL32(232, 148, 36, 255);
+        COL_STAGE[3] = IM_COL32(156, 104, 232, 255);
+        COL_STAGE[4] = IM_COL32(232, 82, 120, 255);
+        COL_TEXT = IM_COL32(28, 34, 46, 255);
+        COL_DIM = IM_COL32(96, 106, 122, 255);
+        COL_FAINT = IM_COL32(178, 186, 198, 255);
+        COL_BOX = IM_COL32(255, 255, 255, 255);
+        COL_RED = IM_COL32(204, 44, 44, 255);
+        COL_GREEN = IM_COL32(24, 140, 66, 255);
+        COL_YELLOW = IM_COL32(168, 116, 0, 255);
+        COL_CYAN = IM_COL32(0, 112, 168, 255);
+        COL_ORANGE = IM_COL32(204, 98, 18, 255);
+        COL_BAR = IM_COL32(200, 207, 218, 255);
+        COL_BAR_LIT = IM_COL32(150, 162, 182, 255);
+        COL_BAR_EDGE = IM_COL32(150, 160, 176, 255);
+        COL_HILITE = IM_COL32(0, 0, 0, 14);
+    }
+}
 
 ImVec4 v4(ImU32 c) { return ImGui::ColorConvertU32ToFloat4(c); }
 ImU32 fade(ImU32 c, float a) {
@@ -46,6 +82,7 @@ ImU32 fade(ImU32 c, float a) {
     return ImGui::ColorConvertFloat4ToU32(v);
 }
 float flash(double at, double now, float dur = 1.2f) {
+    if (!g_anim) return 0.0f;
     float f = 1.0f - static_cast<float>((now - at) / dur);
     return f < 0 ? 0.0f : (f > 1 ? 1.0f : f);
 }
@@ -137,8 +174,9 @@ void draw_toolbar(App& a, ImVec2 pos, ImVec2 size, double now) {
     ImGui::BeginDisabled(halted);
     ImGui::PushStyleColor(ImGuiCol_Button, a.running ? ImVec4(0.62f, 0.38f, 0.12f, 1) : ImVec4(0.13f, 0.50f, 0.30f, 1));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, a.running ? ImVec4(0.75f, 0.47f, 0.16f, 1) : ImVec4(0.17f, 0.62f, 0.38f, 1));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
     if (ImGui::Button(a.running ? "Pause" : "Run", ImVec2(px(84), 0))) a.running = !a.running;
-    ImGui::PopStyleColor(2);
+    ImGui::PopStyleColor(3);
     ImGui::SameLine();
     if (ImGui::Button("Step", ImVec2(px(64), 0))) {
         a.running = false;
@@ -218,8 +256,9 @@ void draw_editor(App& a, ImVec2 pos, ImVec2 size) {
     }
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.16f, 0.38f, 0.66f, 1));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
     if (ImGui::Button("Assemble & load", ImVec2(-1, 0))) a.assemble_and_load();
-    ImGui::PopStyleColor();
+    ImGui::PopStyleColor(2);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Ctrl+Enter");
 
     const float footer = ImGui::GetTextLineHeightWithSpacing() + px(2);
@@ -343,8 +382,8 @@ void draw_datapath(App& a, ImVec2 pos, ImVec2 size, double now) {
     for (int i = 0; i < 4; i++) {
         ImVec2 b0(bar_x[i], top + px(8)), b1(bar_x[i] + bar_w, bottom - px(8));
         const bool lit = hot_bar[i] || a.sel.is(Selection::Latch, i);
-        dl->AddRectFilled(b0, b1, lit ? IM_COL32(96, 112, 140, 255) : IM_COL32(52, 62, 80, 255), px(3));
-        dl->AddRect(b0, b1, lit ? COL_TEXT : IM_COL32(92, 106, 130, 255), px(3));
+        dl->AddRectFilled(b0, b1, lit ? COL_BAR_LIT : COL_BAR, px(3));
+        dl->AddRect(b0, b1, lit ? COL_TEXT : COL_BAR_EDGE, px(3));
         // Wires in and out, with a clock-edge pulse right after a step.
         float pulse = flash(a.step_time, now, 0.35f);
         ImU32 wire = fade(COL_TEXT, 0.18f + 0.5f * pulse);
@@ -516,8 +555,9 @@ void bullet(const std::string& text) {
 bool green_button(const char* label, ImVec2 size = ImVec2(0, 0)) {
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.13f, 0.50f, 0.30f, 1));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.17f, 0.62f, 0.38f, 1));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
     const bool pressed = ImGui::Button(label, size);
-    ImGui::PopStyleColor(2);
+    ImGui::PopStyleColor(3);
     return pressed;
 }
 
@@ -614,7 +654,8 @@ void draw_challenge(App& a, double now) {
         ImGui::SameLine(0, px(22));
         ImGui::TextColored(v4(a.streak >= 3 ? COL_ORANGE : COL_TEXT), "Streak %d", a.streak);
         ImGui::SameLine(0, px(22));
-        ImGui::TextColored(v4(COL_DIM), "Best %d    Correct %d/%d", a.best_streak, a.right, a.asked);
+        ImGui::TextColored(v4(COL_DIM), "Best streak %d    Correct %d/%d    High score %d", a.best_streak, a.right,
+                           a.asked, a.high_score);
         ImGui::PopFont();
         ImGui::SameLine(ImGui::GetContentRegionAvail().x - px(110));
         if (ImGui::Button("Stop challenge", ImVec2(px(110), 0))) {
@@ -634,10 +675,12 @@ void draw_challenge(App& a, double now) {
                 int pushed = 0;
                 if (q.chosen >= 0 && i == q.correct) {
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.13f, 0.50f, 0.30f, 1));
-                    pushed = 1;
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
+                    pushed = 2;
                 } else if (q.chosen == i) {
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.60f, 0.20f, 0.22f, 1));
-                    pushed = 1;
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
+                    pushed = 2;
                 }
                 ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
                 if (ImGui::Button(fmt("  %d.   %s", i + 1, q.options[i].c_str()).c_str(), ImVec2(-1, 0))) a.answer(i);
@@ -807,7 +850,7 @@ void draw_gantt(App& a, ImVec2 pos, ImVec2 size) {
         float x = p0.x + label_w + (c - first) * cell_w;
         const bool last = c + 1 == hist.size();
         if (last)
-            dl->AddRectFilled(ImVec2(x, p0.y), ImVec2(x + cell_w, p0.y + avail.y), IM_COL32(255, 255, 255, 12));
+            dl->AddRectFilled(ImVec2(x, p0.y), ImVec2(x + cell_w, p0.y + avail.y), COL_HILITE);
         text_in(dl, a.font_mono, ImVec2(x, p0.y), ImVec2(x + cell_w, p0.y + head_h), last ? COL_TEXT : COL_DIM,
                 fmt("%llu", static_cast<unsigned long long>(hist[c].cycle)));
     }
@@ -863,9 +906,12 @@ void draw_registers(App& a, ImVec2 pos, ImVec2 size, double now) {
                 ImGui::SameLine(0, px(6));
                 ImGui::TextColored(v4(COL_CYAN), "%-5s", isa::reg_name(i));
                 ImGui::SameLine(0, px(6));
-                ImGui::TextColored(v4(s.regs[i] ? COL_TEXT : COL_FAINT), "%08X", static_cast<uint32_t>(s.regs[i]));
-                ImGui::SameLine(0, px(8));
-                ImGui::TextColored(v4(s.regs[i] ? COL_DIM : COL_FAINT), "%d", s.regs[i]);
+                const int format = a.settings.reg_format;
+                if (format != 2)
+                    ImGui::TextColored(v4(s.regs[i] ? COL_TEXT : COL_FAINT), "%08X", static_cast<uint32_t>(s.regs[i]));
+                if (format == 0) ImGui::SameLine(0, px(8));
+                if (format != 1)
+                    ImGui::TextColored(v4(s.regs[i] ? (format == 2 ? COL_TEXT : COL_DIM) : COL_FAINT), "%d", s.regs[i]);
             }
         }
         ImGui::EndTable();
@@ -956,6 +1002,193 @@ void draw_cache(App& a, ImVec2 pos, ImVec2 size, double now) {
     ImGui::End();
 }
 
+
+// ---------------------------------------------------------------- menu bar, settings, about
+const char* const THEME_NAMES = "Midnight blue\0Black\0Light\0";
+
+void draw_menu(App& a) {
+    if (!ImGui::BeginMainMenuBar()) return;
+    if (ImGui::BeginMenu("File")) {
+        if (ImGui::BeginMenu("Load example")) {
+            for (int i = 0; i < SAMPLE_COUNT; i++)
+                if (ImGui::MenuItem(SAMPLES[i].name, nullptr, a.lesson < 0 && i == a.sample)) a.load_sample(i);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Start lesson")) {
+            const auto& all = lessons();
+            for (int i = 0; i < static_cast<int>(all.size()); i++)
+                if (ImGui::MenuItem(all[i].title, nullptr, i == a.lesson)) a.start_lesson(i);
+            ImGui::EndMenu();
+        }
+        if (ImGui::MenuItem("Reset program")) a.reset();
+        ImGui::Separator();
+        if (ImGui::MenuItem("Settings...", "Ctrl+,")) a.show_settings = true;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Exit", "Alt+F4")) a.want_quit = true;
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("View")) {
+        Settings& s = a.settings;
+        bool changed = false;
+        changed |= ImGui::MenuItem("Assembly editor", nullptr, &s.show_editor);
+        changed |= ImGui::MenuItem("Program listing", nullptr, &s.show_listing);
+        changed |= ImGui::MenuItem("Registers", nullptr, &s.show_registers);
+        changed |= ImGui::MenuItem("Cache and memory", nullptr, &s.show_cache);
+        changed |= ImGui::MenuItem("Pipeline diagram", nullptr, &s.show_diagram);
+        if (changed) a.save_settings();
+        ImGui::Separator();
+        if (ImGui::MenuItem("Larger text", "Ctrl +")) a.set_ui_scale(s.ui_scale + 0.1f);
+        if (ImGui::MenuItem("Smaller text", "Ctrl -")) a.set_ui_scale(s.ui_scale - 0.1f);
+        if (ImGui::MenuItem("Reset text size", "Ctrl 0")) a.set_ui_scale(1.0f);
+        ImGui::Separator();
+        if (ImGui::BeginMenu("Theme")) {
+            static const char* const names[] = {"Midnight blue", "Black", "Light"};
+            for (int i = 0; i < 3; i++)
+                if (ImGui::MenuItem(names[i], nullptr, s.theme == i)) {
+                    s.theme = i;
+                    a.restyle = true;
+                    a.save_settings();
+                }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Help")) {
+        if (ImGui::MenuItem("Keyboard shortcuts")) a.show_shortcuts = true;
+        if (ImGui::MenuItem("About")) a.show_about = true;
+        ImGui::EndMenu();
+    }
+    ImGui::EndMainMenuBar();
+}
+
+void begin_dialog_pos() {
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.45f),
+                            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+}
+const ImGuiWindowFlags DIALOG = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
+                                ImGuiWindowFlags_AlwaysAutoResize;
+
+void draw_settings(App& a) {
+    if (!a.show_settings) return;
+    begin_dialog_pos();
+    if (ImGui::Begin("Settings", &a.show_settings, DIALOG)) {
+        Settings& s = a.settings;
+        bool changed = false;
+        const float w = px(220);
+
+        ImGui::SeparatorText("Appearance");
+        ImGui::SetNextItemWidth(w);
+        ImGui::SliderFloat("Text and interface size", &a.scale_edit, 70.0f, 200.0f, "%.0f%%");
+        if (ImGui::IsItemDeactivatedAfterEdit()) a.set_ui_scale(a.scale_edit / 100.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Applied when you let go of the slider. Ctrl + and Ctrl - also work.");
+        ImGui::SetNextItemWidth(w);
+        if (ImGui::Combo("Theme", &s.theme, THEME_NAMES)) {
+            a.restyle = true;
+            changed = true;
+        }
+        if (ImGui::Checkbox("Animations", &s.animations)) {
+            a.restyle = true;
+            changed = true;
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sliding instructions and the flashes on registers and cache rows.");
+        ImGui::SetNextItemWidth(w);
+        changed |= ImGui::Combo("Register values", &s.reg_format, "Hex and decimal\0Hex only\0Decimal only\0");
+
+        ImGui::SeparatorText("Panels");
+        changed |= ImGui::Checkbox("Assembly editor", &s.show_editor);
+        ImGui::SameLine(px(200));
+        changed |= ImGui::Checkbox("Program listing", &s.show_listing);
+        changed |= ImGui::Checkbox("Registers", &s.show_registers);
+        ImGui::SameLine(px(200));
+        changed |= ImGui::Checkbox("Cache and memory", &s.show_cache);
+        changed |= ImGui::Checkbox("Pipeline diagram", &s.show_diagram);
+
+        ImGui::SeparatorText("Simulation");
+        ImGui::SetNextItemWidth(w);
+        ImGui::SliderFloat("Run speed", &a.speed, 0.5f, 60.0f, "%.1f cycles/s", ImGuiSliderFlags_Logarithmic);
+        changed |= ImGui::IsItemDeactivatedAfterEdit();
+
+        ImGui::SeparatorText("Challenge");
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("High score: %d", a.high_score);
+        ImGui::SameLine(px(200));
+        if (ImGui::Button("Clear high score")) {
+            a.high_score = 0;
+            changed = true;
+        }
+
+        ImGui::Separator();
+        if (ImGui::Button("Restore defaults")) {
+            s = Settings{};
+            a.speed = 3.0f;
+            a.set_ui_scale(1.0f);
+            changed = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Close")) a.show_settings = false;
+        if (a.persist) ImGui::TextColored(v4(COL_DIM), "Saved automatically to %s", a.settings_path().c_str());
+        if (changed) a.save_settings();
+    }
+    ImGui::End();
+}
+
+void draw_about(App& a) {
+    if (!a.show_about) return;
+    begin_dialog_pos();
+    if (ImGui::Begin("About", &a.show_about, DIALOG)) {
+        heading(a, "MIPS Pipeline Simulator", COL_CYAN);
+        ImGui::Text("Version %s", APP_VERSION);
+        ImGui::Spacing();
+        ImGui::PushTextWrapPos(px(440));
+        ImGui::TextWrapped("An interactive tool for learning how a processor works: a cycle-accurate model of a 5-stage "
+                           "MIPS pipeline with forwarding, stalls, branch flushing and a direct-mapped data cache.");
+        ImGui::PopTextWrapPos();
+        ImGui::Spacing();
+        ImGui::TextColored(v4(COL_DIM), "Source code and releases");
+        ImGui::TextLinkOpenURL("github.com/Teddy-shaker/CPU-Simulator", "https://github.com/Teddy-shaker/CPU-Simulator");
+        ImGui::Spacing();
+        ImGui::TextColored(v4(COL_DIM), "Built with");
+        ImGui::Text("Dear ImGui %s", IMGUI_VERSION);
+        if (!a.backend_info.empty()) ImGui::TextUnformatted(a.backend_info.c_str());
+        ImGui::Text("Compiled %s", __DATE__);
+        ImGui::Spacing();
+        if (ImGui::Button("Close", ImVec2(px(90), 0))) a.show_about = false;
+    }
+    ImGui::End();
+}
+
+void draw_shortcuts(App& a) {
+    if (!a.show_shortcuts) return;
+    begin_dialog_pos();
+    if (ImGui::Begin("Keyboard shortcuts", &a.show_shortcuts, DIALOG)) {
+        static const char* const rows[][2] = {
+            {"Space", "Run / pause"},
+            {"Right arrow, F10", "Step one clock cycle"},
+            {"Left arrow", "Step back one cycle"},
+            {"Enter", "Continue (lesson or challenge)"},
+            {"1 - 4", "Answer a challenge question"},
+            {"Ctrl + Enter", "Assemble and load (in the editor)"},
+            {"Ctrl +  /  Ctrl -", "Larger / smaller text"},
+            {"Ctrl 0", "Reset text size"},
+            {"Ctrl ,", "Settings"},
+        };
+        if (ImGui::BeginTable("keys", 2, ImGuiTableFlags_SizingFixedFit)) {
+            for (const auto& r : rows) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextColored(v4(COL_CYAN), "%s", r[0]);
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("   %s", r[1]);
+            }
+            ImGui::EndTable();
+        }
+        ImGui::Spacing();
+        if (ImGui::Button("Close", ImVec2(px(90), 0))) a.show_shortcuts = false;
+    }
+    ImGui::End();
+}
+
 }  // namespace
 
 // ================================================================ App
@@ -966,8 +1199,93 @@ App::App() {
     load_sample(0);
 }
 
+void App::set_ui_scale(float s) {
+    s = std::round(std::clamp(s, 0.7f, 2.0f) * 20.0f) / 20.0f;
+    settings.ui_scale = s;
+    scale_edit = s * 100.0f;
+    restyle = true;
+    save_settings();
+}
+
+std::string App::settings_path() const {
+#ifdef _WIN32
+    char* base = nullptr;
+    size_t len = 0;
+    std::string dir;
+    if (_dupenv_s(&base, &len, "APPDATA") == 0 && base) {
+        dir = std::string(base) + "\\MIPS Pipeline Simulator";
+        std::free(base);
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+        if (!ec) return dir + "\\settings.ini";
+    }
+#endif
+    return "settings.ini";
+}
+
+void App::load_settings() {
+    if (!persist) return;
+    std::ifstream in(settings_path());
+    std::string line;
+    while (std::getline(in, line)) {
+        const size_t eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        const std::string key = line.substr(0, eq);
+        const float v = static_cast<float>(std::atof(line.c_str() + eq + 1));
+        const int n = static_cast<int>(v);
+        Settings& s = settings;
+        if (key == "ui_scale") s.ui_scale = std::clamp(v, 0.7f, 2.0f);
+        else if (key == "theme") s.theme = std::clamp(n, 0, 2);
+        else if (key == "animations") s.animations = n != 0;
+        else if (key == "reg_format") s.reg_format = std::clamp(n, 0, 2);
+        else if (key == "show_editor") s.show_editor = n != 0;
+        else if (key == "show_listing") s.show_listing = n != 0;
+        else if (key == "show_registers") s.show_registers = n != 0;
+        else if (key == "show_cache") s.show_cache = n != 0;
+        else if (key == "show_diagram") s.show_diagram = n != 0;
+        else if (key == "speed") speed = std::clamp(v, 0.5f, 60.0f);
+        else if (key == "high_score") high_score = std::max(0, n);
+    }
+    scale_edit = settings.ui_scale * 100.0f;
+}
+
+void App::save_settings() const {
+    if (!persist) return;
+    std::ofstream out(settings_path());
+    const Settings& s = settings;
+    out << "ui_scale=" << s.ui_scale << "\ntheme=" << s.theme << "\nanimations=" << s.animations
+        << "\nreg_format=" << s.reg_format << "\nshow_editor=" << s.show_editor << "\nshow_listing=" << s.show_listing
+        << "\nshow_registers=" << s.show_registers << "\nshow_cache=" << s.show_cache
+        << "\nshow_diagram=" << s.show_diagram << "\nspeed=" << speed << "\nhigh_score=" << high_score << "\n";
+}
+
 void App::apply_style() {
     g_scale = scale;
+    g_anim = settings.animations;
+    set_palette(settings.theme);
+    ImGui::GetStyle() = ImGuiStyle();
+    if (settings.theme == 2) {
+        ImGui::StyleColorsLight();
+        ImGuiStyle& ls = ImGui::GetStyle();
+        ls.WindowRounding = 6;
+        ls.FrameRounding = 4;
+        ls.GrabRounding = 4;
+        ls.TabRounding = 4;
+        ls.WindowPadding = ImVec2(8, 8);
+        ls.ItemSpacing = ImVec2(8, 5);
+        ls.Colors[ImGuiCol_WindowBg] = ImVec4(0.955f, 0.963f, 0.975f, 1);
+        ls.Colors[ImGuiCol_PopupBg] = ImVec4(0.985f, 0.988f, 0.992f, 1);
+        ls.Colors[ImGuiCol_TitleBg] = ls.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.86f, 0.88f, 0.91f, 1);
+        ls.Colors[ImGuiCol_MenuBarBg] = ImVec4(0.90f, 0.915f, 0.935f, 1);
+        ls.Colors[ImGuiCol_Border] = ImVec4(0.74f, 0.77f, 0.81f, 1);
+        ls.Colors[ImGuiCol_TableHeaderBg] = ImVec4(0.87f, 0.89f, 0.92f, 1);
+        ls.Colors[ImGuiCol_Text] = v4(COL_TEXT);
+        clear_color[0] = 0.82f, clear_color[1] = 0.84f, clear_color[2] = 0.87f;
+        ls.ScaleAllSizes(scale);
+        return;
+    }
+    const bool black = settings.theme == 1;
+    clear_color[0] = black ? 0.0f : 0.035f, clear_color[1] = black ? 0.0f : 0.043f, clear_color[2] = black ? 0.0f : 0.058f;
     ImGui::StyleColorsDark();
     ImGuiStyle& st = ImGui::GetStyle();
     st.WindowRounding = 6;
@@ -996,7 +1314,14 @@ void App::apply_style() {
     c[ImGuiCol_TabSelected] = ImVec4(0.20f, 0.28f, 0.42f, 1);
     c[ImGuiCol_TabHovered] = ImVec4(0.24f, 0.33f, 0.48f, 1);
     c[ImGuiCol_PopupBg] = ImVec4(0.09f, 0.11f, 0.15f, 1);
+    c[ImGuiCol_MenuBarBg] = ImVec4(0.10f, 0.12f, 0.17f, 1);
     c[ImGuiCol_Text] = v4(COL_TEXT);
+    if (black) {
+        c[ImGuiCol_WindowBg] = ImVec4(0.025f, 0.028f, 0.034f, 1);
+        c[ImGuiCol_TitleBg] = c[ImGuiCol_TitleBgActive] = c[ImGuiCol_MenuBarBg] = ImVec4(0.06f, 0.065f, 0.075f, 1);
+        c[ImGuiCol_Border] = ImVec4(0.14f, 0.15f, 0.17f, 1);
+        c[ImGuiCol_PopupBg] = ImVec4(0.04f, 0.045f, 0.052f, 1);
+    }
     st.ScaleAllSizes(scale);
 }
 
@@ -1062,6 +1387,10 @@ void App::answer(int option) {
         best_streak = std::max(best_streak, streak);
         last_points = 10 + 5 * std::min(streak - 1, 8);
         score += last_points;
+        if (score > high_score) {
+            high_score = score;
+            save_settings();
+        }
     } else {
         streak = 0;
         last_points = 0;
@@ -1114,7 +1443,7 @@ void App::step(double now) {
     }
     const Trace& t = sim.history().back();
     step_time = now;
-    slide = true;
+    slide = settings.animations;
     scroll_listing = true;
     if (t.wb_write) reg_at[t.wb_reg] = now;
     if (t.mem.happened) slot_at[t.mem.slot] = now;
@@ -1132,6 +1461,13 @@ void App::step_back() {
 
 void App::frame(double now, float dt) {
     ImGuiIO& io = ImGui::GetIO();
+
+    if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Equal) || ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_KeypadAdd))
+        set_ui_scale(settings.ui_scale + 0.1f);
+    if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Minus) || ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_KeypadSubtract))
+        set_ui_scale(settings.ui_scale - 0.1f);
+    if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_0)) set_ui_scale(1.0f);
+    if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Comma)) show_settings = !show_settings;
 
     const bool enter = ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false);
     if (io.WantTextInput) {
@@ -1178,24 +1514,39 @@ void App::frame(double now, float dt) {
     const float bar_h = px(74);
     const float y0 = o.y + m + bar_h + m;
     const float h = sz.y - bar_h - 3 * m;
-    const float left_w = std::floor(sz.x * 0.215f), right_w = std::floor(sz.x * 0.275f);
-    const float mid_w = sz.x - left_w - right_w - 4 * m;
-    const float xl = o.x + m, xm = xl + left_w + m, xr = xm + mid_w + m;
+    // Hidden panels give their space to their neighbours.
+    const Settings& cfg = settings;
+    const bool left = cfg.show_editor || cfg.show_listing, right = cfg.show_registers || cfg.show_cache;
+    const float left_w = left ? std::floor(sz.x * 0.215f) : 0.0f, right_w = right ? std::floor(sz.x * 0.275f) : 0.0f;
+    const float mid_w = sz.x - left_w - right_w - m * (2 + (left ? 1 : 0) + (right ? 1 : 0));
+    const float xl = o.x + m, xm = left ? xl + left_w + m : xl, xr = xm + mid_w + m;
 
     ImGui::PushFont(font_ui);
+    draw_menu(*this);
     draw_toolbar(*this, ImVec2(o.x + m, o.y + m), ImVec2(sz.x - 2 * m, bar_h), now);
 
-    const float editor_h = std::floor(h * 0.52f);
-    draw_editor(*this, ImVec2(xl, y0), ImVec2(left_w, editor_h));
-    draw_listing(*this, ImVec2(xl, y0 + editor_h + m), ImVec2(left_w, h - editor_h - m));
+    const float editor_h = !cfg.show_editor ? 0.0f : cfg.show_listing ? std::floor(h * 0.52f) : h;
+    if (cfg.show_editor) draw_editor(*this, ImVec2(xl, y0), ImVec2(left_w, editor_h));
+    if (cfg.show_listing) {
+        const float top = cfg.show_editor ? editor_h + m : 0.0f;
+        draw_listing(*this, ImVec2(xl, y0 + top), ImVec2(left_w, h - top));
+    }
 
-    const float path_h = px(262), latch_h = px(322);
+    const float path_h = px(262);
+    const float learn_h = cfg.show_diagram ? std::min(px(322), h - path_h - px(120)) : h - path_h - m;
     draw_datapath(*this, ImVec2(xm, y0), ImVec2(mid_w, path_h), now);
-    draw_learn(*this, ImVec2(xm, y0 + path_h + m), ImVec2(mid_w, latch_h), now);
-    draw_gantt(*this, ImVec2(xm, y0 + path_h + latch_h + 2 * m), ImVec2(mid_w, h - path_h - latch_h - 2 * m));
+    draw_learn(*this, ImVec2(xm, y0 + path_h + m), ImVec2(mid_w, learn_h), now);
+    if (cfg.show_diagram)
+        draw_gantt(*this, ImVec2(xm, y0 + path_h + learn_h + 2 * m), ImVec2(mid_w, h - path_h - learn_h - 2 * m));
 
-    const float regs_h = px(316);
-    draw_registers(*this, ImVec2(xr, y0), ImVec2(right_w, regs_h), now);
-    draw_cache(*this, ImVec2(xr, y0 + regs_h + m), ImVec2(right_w, h - regs_h - m), now);
+    const float regs_h = !cfg.show_registers ? 0.0f : cfg.show_cache ? std::min(px(316), h * 0.5f) : h;
+    if (cfg.show_registers) draw_registers(*this, ImVec2(xr, y0), ImVec2(right_w, regs_h), now);
+    if (cfg.show_cache) {
+        const float top = cfg.show_registers ? regs_h + m : 0.0f;
+        draw_cache(*this, ImVec2(xr, y0 + top), ImVec2(right_w, h - top), now);
+    }
+    draw_settings(*this);
+    draw_about(*this);
+    draw_shortcuts(*this);
     ImGui::PopFont();
 }

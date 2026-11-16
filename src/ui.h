@@ -8,6 +8,17 @@
 
 struct ImFont;
 
+#define APP_VERSION "1.1.0"
+
+// User preferences, saved between runs.
+struct Settings {
+    float ui_scale = 1.0f;   // multiplies text and every other size
+    int theme = 0;           // 0 midnight blue, 1 black, 2 light
+    bool animations = true;
+    int reg_format = 0;      // 0 hex + decimal, 1 hex, 2 decimal
+    bool show_editor = true, show_listing = true, show_registers = true, show_cache = true, show_diagram = true;
+};
+
 struct App {
     Simulator sim;
     std::string source;       // editor text
@@ -36,13 +47,29 @@ struct App {
     int lesson = -1, lesson_step = 0, lesson_cycles = 0;
     bool lesson_running = false;
 
-    float scale = 1.0f;
+    // Preferences and app-level windows.
+    Settings settings;
+    bool persist = true;          // read/write the settings file
+    bool restyle = false;         // main loop must rebuild fonts and style before the next frame
+    bool show_settings = false, show_about = false, show_shortcuts = false;
+    bool want_quit = false;
+    float scale_edit = 100.0f;    // slider value while the Settings window is open
+    int high_score = 0;
+    float dpi_scale = 1.0f;
+    float clear_color[3] = {0.035f, 0.043f, 0.058f};
+    std::string backend_info;     // shown in About
+
+    float scale = 1.0f;           // dpi_scale * settings.ui_scale
     ImFont* font_ui = nullptr;
     ImFont* font_mono = nullptr;
     ImFont* font_title = nullptr;
 
     App();
     void apply_style();
+    void set_ui_scale(float s);
+    std::string settings_path() const;
+    void load_settings();
+    void save_settings() const;
     void load_sample(int index);
     bool assemble_and_load();
     void step(double now);       // clock one cycle unconditionally
